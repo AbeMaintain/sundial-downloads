@@ -33,12 +33,17 @@ jobs:
           $notes = "Windows 10/11 x64. Download **SundialSetup.msi** to install or upgrade. Settings are preserved. This build is unsigned; Windows may show a publisher warning.`n`n**Source:** Sundial-$version-source.zip contains corresponding source, dependency source, build instructions, license notices, and modification information. Licensed GPL-3.0-or-later. SHA256SUMS.txt covers all downloads."
           Set-Content .release/notes.md $notes
           $assets = @($required | ForEach-Object { ".release/$_" }) + '.release/SHA256SUMS.txt'
+          $makeLatest = 'true'
+          $current = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq '.tag_name' 2>$null
+          if ($LASTEXITCODE -eq 0 -and $current -match '^guard-v([0-9]+\.[0-9]+\.[0-9]+)$') {
+            if ([version]$Matches[1] -gt [version]$version) { $makeLatest = 'false' }
+          }
           gh release view $info.tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $info.tag @assets --clobber --repo $env:GITHUB_REPOSITORY
           } else {
             $target = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha'
-            gh release create $info.tag @assets --repo $env:GITHUB_REPOSITORY --target $target --title "Sundial $version" --notes-file .release/notes.md --latest
+            gh release create $info.tag @assets --repo $env:GITHUB_REPOSITORY --target $target --title "Sundial $version" --notes-file .release/notes.md --latest=$makeLatest
           }
           if ($LASTEXITCODE -ne 0) { throw 'Publishing failed' }
           # Release tags point at the website branch, so staging binaries do not remain in reachable git history.
