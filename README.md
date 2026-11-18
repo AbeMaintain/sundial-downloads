@@ -8,3 +8,5 @@ Screen-time limits, curfews, and healthy breaks for Windows.
 - [All releases and source archives](https://github.com/AbeMaintain/sundial-downloads/releases)
 
 Each release includes versioned downloads, corresponding source, build instructions, licenses, and SHA-256 checksums. Sundial is distributed under GPL-3.0-or-later, without warranty. This repository hosts release downloads and the website.
+
+For the application source, choose `SundialSource.zip` or the versioned `Sundial-VERSION-source.zip` under release assets. GitHub’s automatically generated source archives contain this download website.
