@@ -1,0 +1,46 @@
+name: Publish Sundial downloads
+on:
+  push:
+    branches: ['releases/**']
+permissions:
+  contents: write
+concurrency:
+  group: sundial-public-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $info = Get-Content .release/release.json -Raw | ConvertFrom-Json
+          if ($info.tag -notmatch '^guard-v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid release tag' }
+          $version = $info.tag.Substring(7)
+          $required = @("Sundial-$version-x64.msi", "Sundial-$version-x64.zip", "Sundial-$version-source.zip", 'SundialSetup.msi', 'SundialSource.zip')
+          foreach ($name in $required) { if (!(Test-Path -LiteralPath ".release/$name")) { throw "Missing $name" } }
+          foreach ($line in Get-Content .release/SHA256SUMS.txt) {
+            if ($line -notmatch '^([0-9a-f]{64})  ([A-Za-z0-9._-]+)$') { throw 'Invalid checksum record' }
+            $expected = $Matches[1]; $file = $Matches[2]
+            if ((Get-FileHash -LiteralPath ".release/$file" -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw "Checksum mismatch for $file" }
+          }
+          if ((Get-FileHash .release/SundialSetup.msi).Hash -ne (Get-FileHash ".release/Sundial-$version-x64.msi").Hash) { throw 'Installer alias mismatch' }
+          if ((Get-FileHash .release/SundialSource.zip).Hash -ne (Get-FileHash ".release/Sundial-$version-source.zip").Hash) { throw 'Source alias mismatch' }
+          $notes = "Windows 10/11 x64. Download **SundialSetup.msi** to install or upgrade. Settings are preserved. This build is unsigned; Windows may show a publisher warning.`n`n**Source:** Sundial-$version-source.zip contains corresponding source, dependency source, build instructions, license notices, and modification information. Licensed GPL-3.0-or-later. SHA256SUMS.txt covers all downloads."
+          Set-Content .release/notes.md $notes
+          $assets = @($required | ForEach-Object { ".release/$_" }) + '.release/SHA256SUMS.txt'
+          gh release view $info.tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $info.tag @assets --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            $target = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha'
+            gh release create $info.tag @assets --repo $env:GITHUB_REPOSITORY --target $target --title "Sundial $version" --notes-file .release/notes.md --latest
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing failed' }
+          # Release tags point at the website branch, so staging binaries do not remain in reachable git history.
+          gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/heads/$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not clean the release staging branch' }
